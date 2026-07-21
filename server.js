@@ -5,9 +5,10 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
-const isVercel = Boolean(process.env.VERCEL);
-const runtimeDataDir = isVercel ? path.join('/tmp') : __dirname;
+const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+const runtimeDataDir = isVercel ? '/tmp' : __dirname;
 const runtimeDataFile = path.join(runtimeDataDir, 'data.json');
 const sourceDataFile = path.join(__dirname, 'data.json');
 const dataFile = process.env.DATA_FILE_PATH || runtimeDataFile;
@@ -354,4 +355,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app };
+module.exports = app;
