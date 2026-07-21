@@ -1,0 +1,44 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "full_name": "Smart Bank Admin",
+      "email": "admin@smartbank.com",
+      "phone": "08000000000",
+      "password": "$2a$10$UTLrTmGwiNlUqwA9d0QQ0eLX.X0wWa4T5UKPcExN210V1o.vGWBXK",
+      "account_number": "1000000000",
+      "balance": 1000000,
+      "is_admin": 1,
+      "created_at": "2026-07-21T12:29:42.332Z"
+    },
+    {
+      "id": 2,
+      "full_name": "bami",
+      "email": "kazeemb308@gmail.com",
+      "phone": "09169736391",
+      "password": "$2a$10$CWMfPSuwbi0MNI37GAcKDeK5eyNk2NyU2MFXJgiotYjpsXtwA.tym",
+      "account_number": "1129706506",
+      "balance": 0,
+      "is_admin": 0,
+      "created_at": "2026-07-21T12:39:39.866Z"
+    }
+  ],
+  "transactions": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "type": "welcome",
+      "amount": 1000000,
+      "note": "Admin account created",
+      "created_at": "2026-07-21T12:29:42.334Z"
+    },
+    {
+      "id": 2,
+      "user_id": 2,
+      "type": "welcome",
+      "amount": 0,
+      "note": "Account created successfully",
+      "created_at": "2026-07-21T12:39:39.867Z"
+    }
+  ]
+}

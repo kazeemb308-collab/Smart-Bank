@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Bank | Open Account</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">SB</div>
+        <div>
+          <div class="app-title">Smart Bank</div>
+          <div class="muted">Open Account</div>
+        </div>
+      </div>
+      <div></div>
+    </div>
+
+    <div class="card form-card">
+      <% if (error) { %><p class="error"><%= error %></p><% } %>
+      <% if (success) { %><p class="success"><%= success %></p><% } %>
+      <form action="/register" method="POST">
+        <label>Full Name</label>
+        <input type="text" name="full_name" required />
+
+        <label>Email</label>
+        <input type="email" name="email" required />
+
+        <label>Phone Number</label>
+        <input type="text" name="phone" required />
+
+        <label>Password</label>
+        <input type="password" name="password" required />
+
+        <label>Confirm Password</label>
+        <input type="password" name="confirm_password" required />
+
+        <button type="submit">Create Account</button>
+      </form>
+      <p class="muted"><a class="muted" href="/login">Already have an account? Login</a></p>
+    </div>
+
+    <div class="footer-nav">
+      <div class="nav-item">Terms</div>
+      <div class="nav-item">Support</div>
+      <div class="nav-item">Privacy</div>
+    </div>
+  </div>
+</body>
+</html>

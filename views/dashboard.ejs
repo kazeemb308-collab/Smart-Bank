@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Bank | Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">SB</div>
+        <div>
+          <div class="app-title">Smart Bank</div>
+          <div class="muted">Virtual Wallet</div>
+        </div>
+      </div>
+      <div><a href="/logout" class="muted">Logout</a></div>
+    </div>
+
+    <div class="card balance-card">
+      <div class="balance-top">
+        <div>
+          <div class="muted">Welcome back</div>
+          <div class="balance-amount" id="live-balance">$<%= displayBalance %></div>
+          <div class="muted" style="font-size:13px;margin-top:6px">Daily rate: <span id="daily-rate"><%= (dailyRate*100).toFixed(3) %></span>% • APY: <span id="apy-rate"><%= apy %></span>%</div>
+        </div>
+        <div class="account-number">Acct: <%= user.account_number %></div>
+      </div>
+
+      <div class="actions">
+        <a class="action" href="#transfer">Transfer</a>
+        <% if (user.is_admin) { %><a class="action" href="/admin">Admin</a><% } %>
+        <a class="action" href="#history">History</a>
+      </div>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+        <form action="/withdraw" method="POST">
+          <button type="submit" class="action small" disabled>Withdraw (Ineligible)</button>
+        </form>
+        <div class="muted">You are currently ineligible to withdraw funds.</div>
+      </div>
+    </div>
+
+    <div class="card form-card" id="transfer">
+      <div class="section-title"><strong>Send Money</strong></div>
+      <% if (error) { %><p class="error"><%= error %></p><% } %>
+      <% if (success) { %><p class="success"><%= success %></p><% } %>
+      <form action="/transfer" method="POST">
+        <label>Recipient Account Number</label>
+        <input type="text" name="recipientAccount" placeholder="1234567890" required />
+
+        <label>Amount</label>
+        <input type="number" name="amount" step="0.01" min="1" placeholder="0.00" required />
+
+        <button type="submit">Send</button>
+      </form>
+    </div>
+
+    <div class="card" id="history">
+      <div class="section-title"><strong>Recent Activity</strong><a class="muted" href="/dashboard">See all</a></div>
+      <div class="tx-list">
+        <% transactions.forEach((tx) => { %>
+          <div class="tx">
+            <div class="icon"><%= tx.type[0].toUpperCase() %></div>
+            <div class="meta">
+              <div><strong><%= tx.type.replace('_', ' ') %></strong></div>
+              <div class="muted" style="font-size:12px"><%= tx.note %></div>
+            </div>
+            <div class="amount">$<%= Number(tx.amount).toLocaleString() %></div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="footer-nav">
+      <div class="nav-item">Home</div>
+      <div class="nav-item">Transfer</div>
+      <div class="nav-item">Top-up</div>
+      <div class="nav-item">Account</div>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    (function(){
+      const initialBalance = Number(<%= Number(user.balance) %>);
+      const lastInterestAt = '<%= user.last_interest_at || user.created_at %>';
+      const dailyRate = Number(<%= Number(dailyRate) %>);
+
+      const liveEl = document.getElementById('live-balance');
+      const dailyEl = document.getElementById('daily-rate');
+      const apyEl = document.getElementById('apy-rate');
+
+      function update() {
+        const now = Date.now();
+        const last = new Date(lastInterestAt).getTime();
+        const elapsedSec = Math.max(0, (now - last) / 1000);
+        const multiplier = Math.pow(1 + dailyRate, elapsedSec / 86400);
+        const current = initialBalance * multiplier;
+        liveEl.textContent = '$' + current.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+      }
+
+      // initial render
+      if (dailyEl) dailyEl.textContent = (dailyRate*100).toFixed(3) + '%';
+      if (apyEl) apyEl.textContent = ((Math.pow(1+dailyRate,365)-1)*100).toFixed(2) + '%';
+      update();
+      setInterval(update, 1000);
+    })();
+  </script>
+</body>
+</html>

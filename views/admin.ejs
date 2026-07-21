@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Bank | Admin</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">SB</div>
+        <div>
+          <div class="app-title">Admin Console</div>
+          <div class="muted">Manage accounts</div>
+        </div>
+      </div>
+      <div><a class="muted" href="/dashboard">Back</a></div>
+    </div>
+
+    <div class="card form-card">
+      <div class="section-title"><strong>Credit Customer</strong></div>
+      <% if (error) { %><p class="error"><%= error %></p><% } %>
+      <% if (success) { %><p class="success"><%= success %></p><% } %>
+      <form action="/admin/fund" method="POST">
+        <label>Account Number</label>
+        <input type="text" name="account_number" required />
+
+        <label>Amount</label>
+        <input type="number" name="amount" step="0.01" min="1" required />
+
+        <button type="submit">Credit Account</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><strong>Customers</strong></div>
+      <div class="tx-list">
+        <% users.forEach((user) => { %>
+          <div class="tx">
+            <div class="icon"><%= user.full_name.split(' ')[0][0] %></div>
+              <div class="meta">
+                <div><strong><%= user.full_name %></strong></div>
+                <div class="muted"><%= user.account_number %> • $<%= Number(user.balance).toLocaleString() %></div>
+            </div>
+            <div class="muted" style="font-size:12px"><%= user.is_admin ? 'Admin' : 'Customer' %></div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><strong>Recent Transactions</strong></div>
+      <div class="tx-list">
+        <% transactions.forEach((tx) => { %>
+          <div class="tx">
+            <div class="icon">T</div>
+            <div class="meta"><div><strong><%= tx.type %></strong></div><div class="muted"><%= tx.note %></div></div>
+              <div class="amount">$<%= Number(tx.amount).toLocaleString() %></div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
