@@ -6,7 +6,11 @@ const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
-const dataFile = path.join(__dirname, 'data.json');
+const isVercel = Boolean(process.env.VERCEL);
+const runtimeDataDir = isVercel ? path.join('/tmp') : __dirname;
+const runtimeDataFile = path.join(runtimeDataDir, 'data.json');
+const sourceDataFile = path.join(__dirname, 'data.json');
+const dataFile = process.env.DATA_FILE_PATH || runtimeDataFile;
 
 // Config: daily interest rate (fraction). Example: 0.001 = 0.1% daily
 const DAILY_INTEREST_RATE = Number(process.env.DAILY_INTEREST_RATE) || 0.001;
@@ -14,18 +18,39 @@ const DAILY_INTEREST_RATE = Number(process.env.DAILY_INTEREST_RATE) || 0.001;
 let state = { users: [], transactions: [] };
 
 function loadState() {
+  if (isVercel) {
+    fs.mkdirSync(path.dirname(dataFile), { recursive: true });
+    if (!fs.existsSync(dataFile) && fs.existsSync(sourceDataFile)) {
+      try {
+        fs.copyFileSync(sourceDataFile, dataFile);
+      } catch (err) {
+        console.error('Failed to copy source data into /tmp:', err.message);
+      }
+    }
+  }
+
   if (!fs.existsSync(dataFile)) {
     state = { users: [], transactions: [] };
     saveState();
     return state;
   }
 
-  state = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  try {
+    state = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  } catch (err) {
+    console.error('Failed to read data file:', err.message);
+    state = { users: [], transactions: [] };
+  }
   return state;
 }
 
 function saveState() {
-  fs.writeFileSync(dataFile, JSON.stringify(state, null, 2));
+  try {
+    fs.mkdirSync(path.dirname(dataFile), { recursive: true });
+    fs.writeFileSync(dataFile, JSON.stringify(state, null, 2));
+  } catch (err) {
+    console.error('Failed to save state file:', err.message);
+  }
 }
 
 function initDb() {
