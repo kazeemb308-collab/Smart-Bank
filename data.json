@@ -9,7 +9,8 @@
       "account_number": "1000000000",
       "balance": 1000000,
       "is_admin": 1,
-      "created_at": "2026-07-21T12:29:42.332Z"
+      "created_at": "2026-07-21T12:29:42.332Z",
+      "last_interest_at": "2026-07-21T12:29:42.332Z"
     },
     {
       "id": 2,
@@ -20,7 +21,8 @@
       "account_number": "1129706506",
       "balance": 0,
       "is_admin": 0,
-      "created_at": "2026-07-21T12:39:39.866Z"
+      "created_at": "2026-07-21T12:39:39.866Z",
+      "last_interest_at": "2026-07-21T12:39:39.866Z"
     }
   ],
   "transactions": [
@@ -39,6 +41,15 @@
       "amount": 0,
       "note": "Account created successfully",
       "created_at": "2026-07-21T12:39:39.867Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "sender": "customer",
+      "message": "hello how are you",
+      "created_at": "2026-07-21T23:23:04.101Z"
     }
   ]
 }

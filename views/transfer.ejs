@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Bank | Transfer</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">SB</div>
+        <div>
+          <div class="app-title">Smart Bank</div>
+          <div class="muted">Send Funds</div>
+        </div>
+      </div>
+      <div><a href="/logout" class="muted">Logout</a></div>
+    </div>
+
+    <div class="card form-card">
+      <div class="section-title"><strong>Transfer Money</strong></div>
+      <% if (error) { %><p class="error"><%= error %></p><% } %>
+      <% if (success) { %><p class="success"><%= success %></p><% } %>
+      <div class="muted" style="margin-bottom:12px">Available balance: $<%= displayBalance %></div>
+      <form action="/transfer" method="POST">
+        <label>Recipient Account Number</label>
+        <input type="text" name="recipientAccount" placeholder="1234567890" required />
+
+        <label>Amount</label>
+        <input type="number" name="amount" step="0.01" min="1" placeholder="0.00" required />
+
+        <button type="submit">Send</button>
+      </form>
+    </div>
+
+    <div class="footer-nav">
+      <a class="nav-item" href="/dashboard">Home</a>
+      <a class="nav-item" href="/transfer">Transfer</a>
+      <a class="nav-item" href="/history">History</a>
+      <a class="nav-item" href="/dashboard#account">Account</a>
+    </div>
+  </div>
+</body>
+</html>

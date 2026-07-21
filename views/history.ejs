@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Bank | History</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">SB</div>
+        <div>
+          <div class="app-title">Smart Bank</div>
+          <div class="muted">Transaction History</div>
+        </div>
+      </div>
+      <div><a href="/logout" class="muted">Logout</a></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><strong>Recent Transactions</strong><a class="muted" href="/dashboard">Back</a></div>
+      <div class="tx-list">
+        <% transactions.forEach((tx) => { %>
+          <div class="tx">
+            <div class="icon"><%= tx.type[0].toUpperCase() %></div>
+            <div class="meta">
+              <div><strong><%= tx.type.replace('_', ' ') %></strong></div>
+              <div class="muted" style="font-size:12px"><%= tx.note %></div>
+            </div>
+            <div class="amount">$<%= Number(tx.amount).toLocaleString() %></div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="footer-nav">
+      <a class="nav-item" href="/dashboard">Home</a>
+      <a class="nav-item" href="/transfer">Transfer</a>
+      <a class="nav-item" href="/history">History</a>
+      <a class="nav-item" href="/dashboard#account">Account</a>
+    </div>
+  </div>
+</body>
+</html>

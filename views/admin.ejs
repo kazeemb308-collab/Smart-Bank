@@ -30,6 +30,9 @@
         <label>Amount</label>
         <input type="number" name="amount" step="0.01" min="1" required />
 
+        <label>Description</label>
+        <input type="text" name="note" placeholder="Reason for credit (e.g., bonus, refund)" required />
+
         <button type="submit">Credit Account</button>
       </form>
     </div>
@@ -45,6 +48,52 @@
                 <div class="muted"><%= user.account_number %> • $<%= Number(user.balance).toLocaleString() %></div>
             </div>
             <div class="muted" style="font-size:12px"><%= user.is_admin ? 'Admin' : 'Customer' %></div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="card form-card">
+      <div class="section-title"><strong>Reply to Customer</strong></div>
+      <form action="/admin/reply" method="POST">
+        <label>Account Number</label>
+        <input type="text" name="account_number" placeholder="1234567890" required />
+
+        <label>Reply Message</label>
+        <textarea name="message" rows="4" placeholder="Write your reply here" required></textarea>
+
+        <button type="submit">Send Reply</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><strong>Support Conversations</strong></div>
+      <div class="tx-list">
+        <% users.forEach((user) => { %>
+          <% const userMessages = messagesByUser && messagesByUser[user.id] ? messagesByUser[user.id] : []; %>
+          <div class="tx" style="flex-direction:column;align-items:flex-start;gap:6px">
+            <div style="display:flex;align-items:center;gap:10px;width:100%">
+              <div class="icon"><%= user.full_name.split(' ')[0][0] %></div>
+              <div class="meta">
+                <div><strong><%= user.full_name %></strong></div>
+                <div class="muted"><%= user.account_number %></div>
+              </div>
+            </div>
+            <% if (userMessages.length) { %>
+              <div class="chat-thread compact">
+                <% userMessages.forEach((msg) => { %>
+                  <div class="chat-bubble <%= msg.sender === 'admin' ? 'admin' : 'customer' %>">
+                    <div class="chat-meta">
+                      <strong><%= msg.sender === 'admin' ? 'Customer Care' : 'Customer' %></strong>
+                      <span><%= new Date(msg.created_at).toLocaleString() %></span>
+                    </div>
+                    <div class="chat-message"><%= msg.message %></div>
+                  </div>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="muted">No support messages yet.</div>
+            <% } %>
           </div>
         <% }) %>
       </div>

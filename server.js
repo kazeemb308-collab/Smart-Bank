@@ -16,7 +16,7 @@ const dataFile = process.env.DATA_FILE_PATH || runtimeDataFile;
 // Config: daily interest rate (fraction). Example: 0.001 = 0.1% daily
 const DAILY_INTEREST_RATE = Number(process.env.DAILY_INTEREST_RATE) || 0.001;
 
-let state = { users: [], transactions: [] };
+let state = { users: [], transactions: [], messages: [] };
 
 function loadState() {
   if (isVercel) {
@@ -31,7 +31,7 @@ function loadState() {
   }
 
   if (!fs.existsSync(dataFile)) {
-    state = { users: [], transactions: [] };
+    state = { users: [], transactions: [], messages: [] };
     saveState();
     return state;
   }
@@ -60,6 +60,8 @@ function initDb() {
   state.users.forEach((u) => {
     if (!u.last_interest_at) u.last_interest_at = u.created_at || new Date().toISOString();
   });
+
+  state.messages = state.messages || [];
 
   if (!state.users.some((user) => user.email === 'admin@smartbank.com')) {
     const adminPassword = bcrypt.hashSync('Admin@1234', 10);
@@ -119,8 +121,14 @@ function applyInterestToUser(user) {
   return null;
 }
 
+function normalizeUserId(id) {
+  const parsed = Number(id);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function getUserById(id) {
-  return state.users.find((user) => user.id === id) || null;
+  const normalizedId = normalizeUserId(id);
+  return state.users.find((user) => user.id === normalizedId) || null;
 }
 
 function getUserByEmail(email) {
@@ -138,6 +146,12 @@ function getUserTransactions(userId) {
     .slice(0, 10);
 }
 
+function getUserMessages(userId) {
+  return state.messages
+    .filter((msg) => msg.user_id === userId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
 function addTransaction(userId, type, amount, note) {
   const transaction = {
     id: state.transactions.length ? state.transactions[state.transactions.length - 1].id + 1 : 1,
@@ -150,6 +164,19 @@ function addTransaction(userId, type, amount, note) {
   state.transactions.push(transaction);
   saveState();
   return transaction;
+}
+
+function addMessage(userId, sender, message) {
+  const msg = {
+    id: state.messages.length ? state.messages[state.messages.length - 1].id + 1 : 1,
+    user_id: userId,
+    sender,
+    message,
+    created_at: new Date().toISOString()
+  };
+  state.messages.push(msg);
+  saveState();
+  return msg;
 }
 
 function updateUserBalance(userId, delta) {
@@ -174,19 +201,35 @@ app.use(session({
 initDb();
 
 function requireLogin(req, res, next) {
-  if (!req.session.userId) {
+  const userId = normalizeUserId(req.session.userId);
+  if (!userId) {
     return res.redirect('/login');
   }
+
+  req.session.userId = userId;
+  const user = getUserById(userId);
+  if (!user) {
+    req.session.userId = null;
+    return res.redirect('/login');
+  }
+
   next();
 }
 
 function requireAdmin(req, res, next) {
-  if (!req.session.userId) {
+  const userId = normalizeUserId(req.session.userId);
+  if (!userId) {
     return res.redirect('/login');
   }
 
-  const user = getUserById(req.session.userId);
-  if (!user || user.is_admin !== 1) {
+  req.session.userId = userId;
+  const user = getUserById(userId);
+  if (!user) {
+    req.session.userId = null;
+    return res.redirect('/login');
+  }
+
+  if (user.is_admin !== 1) {
     return res.redirect('/dashboard');
   }
 
@@ -254,12 +297,13 @@ app.post('/login', (req, res) => {
     return res.render('login', { error: 'Invalid email or password.', success: null });
   }
 
-  req.session.userId = user.id;
+  req.session.userId = Number(user.id);
   return res.redirect('/dashboard');
 });
 
 app.get('/dashboard', requireLogin, (req, res) => {
-  const user = getUserById(req.session.userId);
+  const userId = normalizeUserId(req.session.userId);
+  const user = getUserById(userId);
   // Apply any accrued daily interest before showing dashboard
   applyInterestToUser(user);
   const transactions = getUserTransactions(req.session.userId);
@@ -274,7 +318,63 @@ app.get('/dashboard', requireLogin, (req, res) => {
     error: req.query.error || null,
     success: req.query.message || null,
     dailyRate: dailyRateNum,
+    initialBalance: Number(user.balance),
+    lastInterestAt: user.last_interest_at || user.created_at,
     displayBalance,
+    apy
+  });
+});
+
+app.get('/account', requireLogin, (req, res) => {
+  const userId = normalizeUserId(req.session.userId);
+  const user = getUserById(userId);
+  if (!user) {
+    req.session.userId = null;
+    return res.redirect('/login');
+  }
+
+  const messages = getUserMessages(user.id);
+  const dailyRateNum = DAILY_INTEREST_RATE;
+  const apy = ((Math.pow(1 + DAILY_INTEREST_RATE, 365) - 1) * 100).toFixed(2);
+
+  res.render('account', {
+    user,
+    messages,
+    error: req.query.error || null,
+    success: req.query.success || null,
+    dailyRate: dailyRateNum,
+    apy
+  });
+});
+
+app.get('/transfer', requireLogin, (req, res) => {
+  const user = getUserById(req.session.userId);
+  const displayBalance = Number(user.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  const dailyRateNum = DAILY_INTEREST_RATE;
+  const apy = ((Math.pow(1 + DAILY_INTEREST_RATE, 365) - 1) * 100).toFixed(2);
+
+  res.render('transfer', {
+    user,
+    error: req.query.error || null,
+    success: req.query.message || null,
+    dailyRate: dailyRateNum,
+    displayBalance,
+    apy
+  });
+});
+
+app.get('/history', requireLogin, (req, res) => {
+  const user = getUserById(req.session.userId);
+  const transactions = getUserTransactions(req.session.userId);
+  const dailyRateNum = DAILY_INTEREST_RATE;
+  const apy = ((Math.pow(1 + DAILY_INTEREST_RATE, 365) - 1) * 100).toFixed(2);
+
+  res.render('history', {
+    user,
+    transactions,
+    error: req.query.error || null,
+    success: req.query.message || null,
+    dailyRate: dailyRateNum,
     apy
   });
 });
@@ -290,7 +390,7 @@ app.post('/transfer', requireLogin, (req, res) => {
   const numericAmount = Number(amount);
 
   if (!recipientAccount || !numericAmount || numericAmount <= 0) {
-    return res.redirect('/dashboard?error=Please provide a valid recipient and amount');
+    return res.redirect('/transfer?error=Please provide a valid recipient and amount');
   }
 
   if (sender.balance < numericAmount) {
@@ -317,21 +417,26 @@ app.get('/admin', requireAdmin, (req, res) => {
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 20)
     .map((tx) => ({ ...tx, full_name: getUserById(tx.user_id)?.full_name || 'Unknown' }));
+  const messagesByUser = users.reduce((acc, user) => {
+    acc[user.id] = getUserMessages(user.id);
+    return acc;
+  }, {});
 
   res.render('admin', {
     users,
     transactions,
+    messagesByUser,
     error: req.query.error || null,
     success: req.query.message || null
   });
 });
 
 app.post('/admin/fund', requireAdmin, (req, res) => {
-  const { account_number, amount } = req.body;
+  const { account_number, amount, note } = req.body;
   const numericAmount = Number(amount);
 
   if (!account_number || !numericAmount || numericAmount <= 0) {
-    return res.redirect('/admin?error=Enter a valid account number and amount');
+    return res.redirect('/admin?error=Enter a valid account number, amount, and note');
   }
 
   const user = getUserByAccountNumber(account_number);
@@ -340,9 +445,67 @@ app.post('/admin/fund', requireAdmin, (req, res) => {
   }
 
   updateUserBalance(user.id, numericAmount);
-  addTransaction(user.id, 'admin_credit', numericAmount, 'Funds added by administrator');
+  addTransaction(user.id, 'admin_credit', numericAmount, note || 'Funds added by administrator');
 
   return res.redirect('/admin?message=Funds added successfully');
+});
+
+app.post('/admin/reply', requireAdmin, (req, res) => {
+  const { account_number, message } = req.body;
+  const numericUser = getUserByAccountNumber(account_number);
+
+  if (!account_number || !message || !message.trim()) {
+    return res.redirect('/admin?error=Please provide an account number and reply message');
+  }
+
+  if (!numericUser) {
+    return res.redirect('/admin?error=Account not found');
+  }
+
+  addMessage(numericUser.id, 'admin', message.trim());
+  return res.redirect('/admin?message=Reply sent successfully');
+});
+
+app.post('/account/update', requireLogin, (req, res) => {
+  const { email, phone } = req.body;
+  const user = getUserById(req.session.userId);
+
+  if (!user) {
+    return res.redirect('/login');
+  }
+
+  const existingEmail = state.users.find((u) => u.email === email && u.id !== user.id);
+  const existingPhone = state.users.find((u) => u.phone === phone && u.id !== user.id);
+
+  if (!email || !phone) {
+    return res.redirect('/account?error=Please provide both email and phone number');
+  }
+
+  if (existingEmail) {
+    return res.redirect('/account?error=This email is already in use');
+  }
+
+  if (existingPhone) {
+    return res.redirect('/account?error=This phone number is already in use');
+  }
+
+  user.email = email;
+  user.phone = phone;
+  saveState();
+
+  return res.redirect('/account?success=Account details updated');
+});
+
+app.post('/account/message', requireLogin, (req, res) => {
+  const { message } = req.body;
+  const user = getUserById(req.session.userId);
+
+  if (!message || !message.trim()) {
+    return res.redirect('/account?error=Please enter a message');
+  }
+
+  addMessage(user.id, 'customer', message.trim());
+  return res.redirect('/account?success=Message sent to customer care');
 });
 
 app.get('/logout', (req, res) => {

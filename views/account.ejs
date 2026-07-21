@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Bank | Account</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">SB</div>
+        <div>
+          <div class="app-title">Smart Bank</div>
+          <div class="muted">Account & Support</div>
+        </div>
+      </div>
+      <div><a href="/dashboard" class="muted">Back</a></div>
+    </div>
+
+    <div class="card form-card">
+      <div class="section-title"><strong>Update Account</strong></div>
+      <% if (error) { %>
+        <p class="error"><%= error %></p>
+      <% } %>
+      <% if (success) { %>
+        <p class="success"><%= success %></p>
+      <% } %>
+      <form action="/account/update" method="POST">
+        <label>Email</label>
+        <input type="email" name="email" value="<%= user.email %>" required />
+
+        <label>Phone</label>
+        <input type="text" name="phone" value="<%= user.phone %>" required />
+
+        <button type="submit">Save details</button>
+      </form>
+    </div>
+
+    <div class="support-fab" id="supportFab" role="button" tabindex="0" aria-label="Open customer care chat">
+      <span>💬</span>
+      <strong>Customer Care</strong>
+    </div>
+
+    <div class="support-panel" id="supportPanel">
+      <div class="support-panel-header">
+        <div>
+          <strong>Customer Care</strong>
+          <div class="muted">We usually reply within a few minutes</div>
+        </div>
+        <button type="button" class="support-close" id="supportClose">✕</button>
+      </div>
+
+      <div class="chat-thread">
+        <% if (!messages || !messages.length) { %>
+          <div class="chat-empty">No messages yet. Start the conversation below.</div>
+        <% } else { %>
+          <% messages.forEach((msg) => { %>
+            <div class="chat-bubble <%= msg.sender === 'admin' ? 'admin' : 'customer' %>">
+              <div class="chat-meta">
+                <strong><%= msg.sender === 'admin' ? 'Customer Care' : 'You' %></strong>
+                <span><%= new Date(msg.created_at).toLocaleString() %></span>
+              </div>
+              <div class="chat-message"><%= msg.message %></div>
+            </div>
+          <% }) %>
+        <% } %>
+      </div>
+
+      <form action="/account/message" method="POST" class="support-form">
+        <textarea name="message" rows="3" placeholder="Describe your issue or request" required></textarea>
+        <button type="submit">Send message</button>
+      </form>
+    </div>
+
+    <div class="footer-nav">
+      <a class="nav-item" href="/dashboard">Home</a>
+      <a class="nav-item" href="/transfer">Transfer</a>
+      <a class="nav-item" href="/history">History</a>
+      <a class="nav-item" href="/account">Account</a>
+    </div>
+  </div>
+  <script>
+    const fab = document.getElementById('supportFab');
+    const panel = document.getElementById('supportPanel');
+    const closeBtn = document.getElementById('supportClose');
+
+    if (fab && panel) {
+      fab.addEventListener('click', () => panel.classList.add('open'));
+      closeBtn?.addEventListener('click', () => panel.classList.remove('open'));
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') panel.classList.remove('open');
+      });
+    }
+  </script>
+</body>
+</html>

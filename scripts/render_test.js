@@ -12,7 +12,7 @@ const apy = ((Math.pow(1 + dailyRate, 365) - 1) * 100).toFixed(2);
 
 console.log('Testing render...');
 
-ejs.renderFile(tpl, { user, transactions, dailyRate, displayBalance, apy, error: null, success: null }, {}, (err, str) => {
+ejs.renderFile(tpl, { user, transactions, dailyRate, displayBalance, apy, error: null, success: null, initialBalance: Number(user.balance), lastInterestAt: user.last_interest_at || user.created_at }, {}, (err, str) => {
   if (err) {
     console.error('Render error:');
     console.error(err);
