@@ -23,9 +23,10 @@
       <div class="balance-top">
         <div>
           <div class="muted">Welcome Back</div>
-          <div class="balance-amount"><%= user.full_name %></div>
-          <div class="muted" style="font-size:13px;margin-top:6px">Balance: $<%= displayBalance %></div>
+          <div class="balance-amount" id="live-balance">$<%= displayBalance %></div>
+          <div class="muted" style="font-size:13px;margin-top:6px">Hello, <%= user.full_name %></div>
           <div class="muted" style="font-size:13px;margin-top:6px">Acct: <%= user.account_number %></div>
+          <div class="muted" style="font-size:13px;margin-top:6px">Daily rate: <span id="daily-rate"><%= (dailyRate*100).toFixed(3) %></span>% • APY: <span id="apy-rate"><%= apy %></span>%</div>
         </div>
       </div>
 
@@ -72,16 +73,6 @@
         <% }) %>
       </div>
     </div>
-
-    <div class="footer-nav">
-      <a class="nav-item" href="#top">Home</a>
-      <a class="nav-item" href="#transfer">Transfer</a>
-      <a class="nav-item" href="#history">History</a>
-      <a class="nav-item" href="#account">Account</a>
-    </div>
-  </div>
-  </div>
-
   <script>
     (function(){
       const initialBalance = Number(<%= Number(user.balance) %>);
