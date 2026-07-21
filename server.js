@@ -147,8 +147,13 @@ function getUserTransactions(userId) {
 }
 
 function getUserMessages(userId) {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!normalizedUserId) {
+    return [];
+  }
+
   return state.messages
-    .filter((msg) => msg.user_id === userId)
+    .filter((msg) => normalizeUserId(msg.user_id) === normalizedUserId)
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
@@ -167,11 +172,18 @@ function addTransaction(userId, type, amount, note) {
 }
 
 function addMessage(userId, sender, message) {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!normalizedUserId) {
+    return null;
+  }
+
+  const user = getUserById(normalizedUserId);
   const msg = {
     id: state.messages.length ? state.messages[state.messages.length - 1].id + 1 : 1,
-    user_id: userId,
+    user_id: normalizedUserId,
     sender,
     message,
+    account_number: user?.account_number || null,
     created_at: new Date().toISOString()
   };
   state.messages.push(msg);
@@ -417,10 +429,26 @@ app.get('/admin', requireAdmin, (req, res) => {
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 20)
     .map((tx) => ({ ...tx, full_name: getUserById(tx.user_id)?.full_name || 'Unknown' }));
+
   const messagesByUser = users.reduce((acc, user) => {
     acc[user.id] = getUserMessages(user.id);
     return acc;
   }, {});
+
+  state.messages.forEach((msg) => {
+    const userId = normalizeUserId(msg.user_id);
+    if (!userId) return;
+    if (!messagesByUser[userId]) {
+      messagesByUser[userId] = [];
+    }
+    if (!messagesByUser[userId].some((existing) => existing.id === msg.id)) {
+      messagesByUser[userId].push(msg);
+    }
+  });
+
+  Object.keys(messagesByUser).forEach((userId) => {
+    messagesByUser[userId].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  });
 
   res.render('admin', {
     users,
@@ -504,7 +532,11 @@ app.post('/account/message', requireLogin, (req, res) => {
     return res.redirect('/account?error=Please enter a message');
   }
 
-  addMessage(user.id, 'customer', message.trim());
+  const storedMessage = addMessage(user.id, 'customer', message.trim());
+  if (!storedMessage) {
+    return res.redirect('/account?error=Unable to send message right now');
+  }
+
   return res.redirect('/account?success=Message sent to customer care');
 });
 
