@@ -83,6 +83,13 @@ async function initDb() {
       u.interest_rate = DAILY_INTEREST_RATE;
       stateChanged = true;
     }
+    // Interest is credited once every 24 hours. Existing accounts continue
+    // from their previous interest timestamp without requiring a time setting.
+    if (!u.next_interest_at) {
+      const last = new Date(u.last_interest_at || u.created_at || Date.now());
+      u.next_interest_at = new Date(last.getTime() + 24 * 60 * 60 * 1000).toISOString();
+      stateChanged = true;
+    }
   });
 
   if (!state.users.some((user) => user.email === 'admin@smartbank.com')) {
@@ -121,40 +128,87 @@ async function initDb() {
   console.log(firebaseEnabled ? 'Smart Bank persistence: Firestore' : 'Smart Bank persistence: local file');
 }
 
-function daysBetween(a, b) {
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const da = new Date(a);
-  const db = new Date(b);
-  return Math.floor((db - da) / msPerDay);
-}
-
 function getInterestRate(user) {
   const rate = Number(user?.interest_rate);
   return Number.isFinite(rate) && rate >= 0 ? rate : DAILY_INTEREST_RATE;
 }
 
-function applyInterestToUser(user) {
-  if (!user) return null;
-  const now = new Date().toISOString();
-  const last = user.last_interest_at || user.created_at || now;
-  const days = daysBetween(last, now);
-  if (days <= 0) return null;
+const INTEREST_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+function processDueInterestForUser(user, nowMs = Date.now()) {
+  if (!user) return 0;
 
   const userRate = getInterestRate(user);
-  const oldBalance = Number(user.balance);
-  const multiplier = Math.pow(1 + userRate, days);
-  const newBalance = Number((oldBalance * multiplier).toFixed(6));
-  const interestAmount = Number((newBalance - oldBalance).toFixed(6));
-  if (interestAmount > 0) {
-    user.balance = newBalance;
-    user.last_interest_at = now;
-    saveState();
-    addTransaction(user.id, 'interest', interestAmount, `Daily interest for ${days} day(s) at ${(userRate * 100).toFixed(3)}%`);
-    return interestAmount;
+  let next = new Date(user.next_interest_at || (
+    new Date(user.last_interest_at || user.created_at || nowMs).getTime() + INTEREST_INTERVAL_MS
+  ));
+
+  if (!Number.isFinite(next.getTime())) {
+    next = new Date(nowMs + INTEREST_INTERVAL_MS);
   }
-  user.last_interest_at = now;
-  saveState();
-  return null;
+
+  let totalInterest = 0;
+  let credits = 0;
+  let changed = false;
+
+  // Catch up missed daily credits while preserving the original 24-hour schedule.
+  // The guard prevents a corrupt timestamp from creating an unbounded loop.
+  let safety = 0;
+  while (next.getTime() <= nowMs && safety < 3660) {
+    const oldBalance = Number(user.balance) || 0;
+    const interestAmount = Number((oldBalance * userRate).toFixed(6));
+
+    if (interestAmount > 0) {
+      user.balance = Number((oldBalance + interestAmount).toFixed(6));
+      totalInterest += interestAmount;
+      credits += 1;
+      addTransaction(
+        user.id,
+        'interest',
+        interestAmount,
+        `Daily interest credited at ${(userRate * 100).toFixed(3)}%`,
+        {
+          interest_rate: userRate,
+          scheduled_for: next.toISOString(),
+          balance_after: user.balance
+        }
+      );
+    }
+
+    user.last_interest_at = new Date(nowMs).toISOString();
+    next = new Date(next.getTime() + INTEREST_INTERVAL_MS);
+    user.next_interest_at = next.toISOString();
+    changed = true;
+    safety += 1;
+  }
+
+  if (changed) {
+    saveState();
+  }
+
+  return { totalInterest: Number(totalInterest.toFixed(6)), credits };
+}
+
+async function processDueInterestForAllUsers() {
+  let totalCredits = 0;
+  let totalInterest = 0;
+
+  for (const user of state.users) {
+    if (user.is_admin) continue;
+    const result = processDueInterestForUser(user);
+    totalCredits += result.credits;
+    totalInterest += result.totalInterest;
+  }
+
+  if (totalCredits > 0) {
+    await waitForPersistence();
+  }
+
+  return {
+    usersProcessed: state.users.filter((user) => !user.is_admin).length,
+    credits: totalCredits,
+    totalInterest: Number(totalInterest.toFixed(6))
+  };
 }
 
 function normalizeUserId(id) {
@@ -397,7 +451,7 @@ app.post('/login', async (req, res) => {
 app.get('/dashboard', requireLogin, async (req, res) => {
   const userId = normalizeUserId(req.session.userId);
   const user = getUserById(userId);
-  applyInterestToUser(user);
+  processDueInterestForUser(user);
   await waitForPersistence();
   const transactions = getUserTransactions(req.session.userId);
 
@@ -413,6 +467,7 @@ app.get('/dashboard', requireLogin, async (req, res) => {
     dailyRate: dailyRateNum,
     initialBalance: Number(user.balance),
     lastInterestAt: user.last_interest_at || user.created_at,
+    nextInterestAt: user.next_interest_at,
     displayBalance,
     apy
   });
@@ -442,6 +497,7 @@ app.get('/account', requireLogin, (req, res) => {
 
 app.get('/transfer', requireLogin, (req, res) => {
   const user = getUserById(req.session.userId);
+  processDueInterestForUser(user);
   const displayBalance = Number(user.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
   const dailyRateNum = getInterestRate(user);
   const apy = ((Math.pow(1 + dailyRateNum, 365) - 1) * 100).toFixed(2);
@@ -458,6 +514,7 @@ app.get('/transfer', requireLogin, (req, res) => {
 
 app.get('/history', requireLogin, (req, res) => {
   const user = getUserById(req.session.userId);
+  processDueInterestForUser(user);
   const transactions = getUserTransactions(req.session.userId);
   const interestSummary = getInterestSummary(req.session.userId);
   const dailyRateNum = getInterestRate(user);
@@ -595,9 +652,10 @@ app.post('/admin/interest-rate', requireAdmin, async (req, res) => {
     return res.redirect('/admin?error=Account not found');
   }
 
-  // Settle interest already earned under the old rate before changing it.
-  applyInterestToUser(user);
+  // Settle any due interest under the old rate before changing it.
+  processDueInterestForUser(user);
   user.interest_rate = percentage / 100;
+  user.next_interest_at = new Date(Date.now() + INTEREST_INTERVAL_MS).toISOString();
   saveState();
   await waitForPersistence();
 
@@ -667,6 +725,23 @@ app.post('/account/message', requireLogin, async (req, res) => {
 
   await waitForPersistence();
   return res.redirect('/account?success=Message sent to customer care');
+});
+
+app.get('/api/cron/daily-interest', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const result = await processDueInterestForAllUsers();
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Daily interest cron failed:', error);
+    return res.status(500).json({ error: 'Daily interest processing failed' });
+  }
 });
 
 app.get('/logout', (req, res) => {
