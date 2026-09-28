@@ -85,9 +85,13 @@ async function initDb() {
     }
     // Interest is credited once every 24 hours. Existing accounts continue
     // from their previous interest timestamp without requiring a time setting.
+    if (!Number.isInteger(Number(u.interest_interval_days)) || Number(u.interest_interval_days) < MIN_INTEREST_INTERVAL_DAYS) {
+      u.interest_interval_days = DEFAULT_INTEREST_INTERVAL_DAYS;
+      stateChanged = true;
+    }
     if (!u.next_interest_at) {
       const last = new Date(u.last_interest_at || u.created_at || Date.now());
-      u.next_interest_at = new Date(last.getTime() + 24 * 60 * 60 * 1000).toISOString();
+      u.next_interest_at = new Date(last.getTime() + getInterestIntervalMs(u)).toISOString();
       stateChanged = true;
     }
   });
@@ -104,7 +108,8 @@ async function initDb() {
       balance: 1000000,
       interest_rate: DAILY_INTEREST_RATE,
       last_interest_at: new Date().toISOString(),
-      next_interest_at: new Date(Date.now() + INTEREST_INTERVAL_MS).toISOString(),
+      interest_interval_days: DEFAULT_INTEREST_INTERVAL_DAYS,
+      next_interest_at: new Date(Date.now() + DEFAULT_INTEREST_INTERVAL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
       is_admin: 1,
       created_at: new Date().toISOString()
     };
@@ -134,14 +139,26 @@ function getInterestRate(user) {
   return Number.isFinite(rate) && rate >= 0 ? rate : DAILY_INTEREST_RATE;
 }
 
-const INTEREST_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_INTEREST_INTERVAL_DAYS = 1;
+const MIN_INTEREST_INTERVAL_DAYS = 1;
+
+function getInterestIntervalDays(user) {
+  const days = Number(user?.interest_interval_days);
+  return Number.isInteger(days) && days >= MIN_INTEREST_INTERVAL_DAYS ? days : DEFAULT_INTEREST_INTERVAL_DAYS;
+}
+
+function getInterestIntervalMs(user) {
+  return getInterestIntervalDays(user) * 24 * 60 * 60 * 1000;
+}
 
 function processDueInterestForUser(user, nowMs = Date.now()) {
   if (!user) return 0;
 
   const userRate = getInterestRate(user);
+  const intervalDays = getInterestIntervalDays(user);
+  const intervalMs = getInterestIntervalMs(user);
   let next = new Date(user.next_interest_at || (
-    new Date(user.last_interest_at || user.created_at || nowMs).getTime() + INTEREST_INTERVAL_MS
+    new Date(user.last_interest_at || user.created_at || nowMs).getTime() + intervalMs
   ));
 
   if (!Number.isFinite(next.getTime())) {
@@ -177,7 +194,7 @@ function processDueInterestForUser(user, nowMs = Date.now()) {
     }
 
     user.last_interest_at = new Date(nowMs).toISOString();
-    next = new Date(next.getTime() + INTEREST_INTERVAL_MS);
+    next = new Date(next.getTime() + intervalMs);
     user.next_interest_at = next.toISOString();
     changed = true;
     safety += 1;
@@ -644,26 +661,32 @@ app.post('/admin/fund', requireAdmin, async (req, res) => {
 });
 
 app.post('/admin/interest-rate', requireAdmin, async (req, res) => {
-  const { account_number, interest_rate } = req.body;
+  const { account_number, interest_rate, interest_interval_days } = req.body;
   const user = getUserByAccountNumber(account_number);
   const percentage = Number(interest_rate);
+  const intervalDays = Number(interest_interval_days);
 
   if (!account_number || !Number.isFinite(percentage) || percentage < 0) {
     return res.redirect('/admin?error=Enter a valid account number and interest rate');
+  }
+
+  if (!Number.isInteger(intervalDays) || intervalDays < MIN_INTEREST_INTERVAL_DAYS) {
+    return res.redirect('/admin?error=Interest payment interval must be at least 1 day');
   }
 
   if (!user) {
     return res.redirect('/admin?error=Account not found');
   }
 
-  // Settle any due interest under the old rate before changing it.
+  // Settle any due interest under the old settings before changing them.
   processDueInterestForUser(user);
   user.interest_rate = percentage / 100;
-  user.next_interest_at = new Date(Date.now() + INTEREST_INTERVAL_MS).toISOString();
+  user.interest_interval_days = intervalDays;
+  user.next_interest_at = new Date(Date.now() + getInterestIntervalMs(user)).toISOString();
   saveState();
   await waitForPersistence();
 
-  return res.redirect('/admin?message=Interest rate updated successfully');
+  return res.redirect('/admin?message=Interest rate and payment interval updated successfully');
 });
 
 app.post('/admin/reply', requireAdmin, async (req, res) => {
