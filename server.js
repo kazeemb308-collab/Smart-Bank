@@ -182,6 +182,22 @@ function getUserTransactions(userId) {
     .slice(0, 10);
 }
 
+function getUserInterestTransactions(userId) {
+  return state.transactions
+    .filter((tx) => tx.user_id === userId && tx.type === 'interest')
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+function getInterestSummary(userId) {
+  const interestTransactions = getUserInterestTransactions(userId);
+  const totalInterest = interestTransactions.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  return {
+    transactions: interestTransactions,
+    totalInterest: Number(totalInterest.toFixed(6)),
+    credits: interestTransactions.length
+  };
+}
+
 function getUserMessages(userId) {
   const normalizedUserId = normalizeUserId(userId);
   if (!normalizedUserId) {
@@ -239,9 +255,24 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
+
+// Basic security headers. Keep the app simple while reducing common browser-side risks.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+const sessionSecret = process.env.SESSION_SECRET || 'smart-bank-session-secret-key';
+if (isVercel && !process.env.SESSION_SECRET) {
+  console.warn('SECURITY WARNING: Set a strong SESSION_SECRET in Vercel environment variables.');
+}
+
 app.use(session({
   name: 'smartbank_session',
-  keys: [process.env.SESSION_SECRET || 'smart-bank-session-secret-key'],
+  keys: [sessionSecret],
   maxAge: 1000 * 60 * 60 * 8,
   httpOnly: true,
   sameSite: 'lax',
@@ -428,12 +459,16 @@ app.get('/transfer', requireLogin, (req, res) => {
 app.get('/history', requireLogin, (req, res) => {
   const user = getUserById(req.session.userId);
   const transactions = getUserTransactions(req.session.userId);
+  const interestSummary = getInterestSummary(req.session.userId);
   const dailyRateNum = getInterestRate(user);
   const apy = ((Math.pow(1 + dailyRateNum, 365) - 1) * 100).toFixed(2);
 
   res.render('history', {
     user,
     transactions,
+    interestTransactions: interestSummary.transactions,
+    totalInterest: interestSummary.totalInterest,
+    interestCredits: interestSummary.credits,
     error: req.query.error || null,
     success: req.query.success || null,
     dailyRate: dailyRateNum,
@@ -480,6 +515,23 @@ app.get('/admin', requireAdmin, (req, res) => {
     .slice(0, 20)
     .map((tx) => ({ ...tx, full_name: getUserById(tx.user_id)?.full_name || 'Unknown' }));
 
+  const customers = users.filter((user) => !user.is_admin);
+  const totalCustomerBalance = customers.reduce((sum, user) => sum + Number(user.balance || 0), 0);
+  const totalInterestPaid = state.transactions
+    .filter((tx) => tx.type === 'interest')
+    .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const transactionsToday = state.transactions.filter(
+    (tx) => String(tx.created_at || '').slice(0, 10) === todayKey
+  ).length;
+
+  const adminStats = {
+    customerCount: customers.length,
+    totalCustomerBalance: Number(totalCustomerBalance.toFixed(6)),
+    totalInterestPaid: Number(totalInterestPaid.toFixed(6)),
+    transactionsToday
+  };
+
   const messagesByUser = users.reduce((acc, user) => {
     acc[user.id] = getUserMessages(user.id);
     return acc;
@@ -504,6 +556,7 @@ app.get('/admin', requireAdmin, (req, res) => {
     users,
     transactions,
     messagesByUser,
+    adminStats,
     error: req.query.error || null,
     success: req.query.message || null
   });
