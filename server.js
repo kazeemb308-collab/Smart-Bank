@@ -1,5 +1,5 @@
 const express = require('express');
-const session = require('express-session');
+const session = require('cookie-session');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
@@ -223,10 +223,12 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
-  secret: 'smart-bank-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 1000 * 60 * 60 * 8 }
+  name: 'smartbank_session',
+  keys: [process.env.SESSION_SECRET || 'smart-bank-session-secret-key'],
+  maxAge: 1000 * 60 * 60 * 8,
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: isVercel
 }));
 
 const dbReady = initDb();
@@ -577,7 +579,8 @@ app.post('/account/message', requireLogin, async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/login?message=You have logged out'));
+  req.session = null;
+  res.redirect('/login?message=You have logged out');
 });
 
 if (require.main === module) {
