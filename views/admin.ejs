@@ -19,6 +19,30 @@
       <div><a class="muted" href="/dashboard">Back</a></div>
     </div>
 
+    <div class="card">
+      <div class="section-title"><strong>Admin Dashboard</strong><span class="muted">Overview</span></div>
+      <div class="stat-row">
+        <div>
+          <strong>Customers</strong>
+          <div><%= adminStats.customerCount %></div>
+        </div>
+        <div>
+          <strong>Total customer balance</strong>
+          <div>$<%= Number(adminStats.totalCustomerBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) %></div>
+        </div>
+      </div>
+      <div class="stat-row" style="margin-top:12px">
+        <div>
+          <strong>Total interest paid</strong>
+          <div>$<%= Number(adminStats.totalInterestPaid).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) %></div>
+        </div>
+        <div>
+          <strong>Transactions today</strong>
+          <div><%= adminStats.transactionsToday %></div>
+        </div>
+      </div>
+    </div>
+
     <div class="card form-card">
       <div class="section-title"><strong>Credit Customer</strong></div>
       <% if (error) { %><p class="error"><%= error %></p><% } %>

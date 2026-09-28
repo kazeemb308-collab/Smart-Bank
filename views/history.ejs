@@ -35,6 +35,39 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="section-title"><strong>Interest History</strong><span class="muted"><%= interestCredits %> credit<%= interestCredits === 1 ? '' : 's' %></span></div>
+
+      <div class="stat-row" style="margin-bottom:14px">
+        <div>
+          <strong>Total interest earned</strong>
+          <div>$<%= Number(totalInterest).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) %></div>
+        </div>
+        <div>
+          <strong>Current daily rate</strong>
+          <div><%= (dailyRate * 100).toFixed(3) %>%</div>
+        </div>
+      </div>
+
+      <% if (interestTransactions.length) { %>
+        <div class="tx-list">
+          <% interestTransactions.forEach((tx) => { %>
+            <div class="tx">
+              <div class="icon">I</div>
+              <div class="meta">
+                <div><strong>Interest credited</strong></div>
+                <div class="muted" style="font-size:12px"><%= new Date(tx.created_at).toLocaleString() %></div>
+                <div class="muted" style="font-size:12px"><%= tx.note %></div>
+              </div>
+              <div class="amount">+$<%= Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) %></div>
+            </div>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <div class="muted">No interest has been credited yet.</div>
+      <% } %>
+    </div>
+
     <div class="footer-nav">
       <a class="nav-item" href="/dashboard">Home</a>
       <a class="nav-item" href="/transfer">Transfer</a>
