@@ -62,7 +62,7 @@
     </div>
 
     <div class="card">
-      <div class="section-title"><strong>Customers & Interest Rates</strong></div>
+      <div class="section-title"><strong>Customers & Interest Settings</strong></div>
       <div class="tx-list">
         <% users.forEach((user) => { %>
           <div class="tx" style="flex-direction:column;align-items:stretch;gap:10px">
@@ -72,7 +72,8 @@
                 <div><strong><%= user.full_name %></strong></div>
                 <div class="muted"><%= user.account_number %> • $<%= Number(user.balance).toLocaleString() %></div>
                 <div class="muted" style="font-size:12px">
-                  Current daily rate: <%= (Number(user.interest_rate || 0) * 100).toFixed(3) %>%
+                  Interest rate: <%= (Number(user.interest_rate || 0) * 100).toFixed(3) %>% • Pays every <%= Number(user.interest_interval_days || 1) %> day<%= Number(user.interest_interval_days || 1) === 1 ? '' : 's' %><br />
+                  Next credit: <%= user.next_interest_at ? new Date(user.next_interest_at).toLocaleString() : 'Not scheduled' %>
                 </div>
               </div>
               <div class="muted" style="font-size:12px;margin-left:auto"><%= user.is_admin ? 'Admin' : 'Customer' %></div>
@@ -81,11 +82,16 @@
             <form action="/admin/interest-rate" method="POST" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
               <input type="hidden" name="account_number" value="<%= user.account_number %>" />
               <div style="flex:1;min-width:140px">
-                <label style="font-size:12px">New daily rate (%)</label>
+                <label style="font-size:12px">Interest rate per credit (%)</label>
                 <input type="number" name="interest_rate" step="0.001" min="0"
                        value="<%= (Number(user.interest_rate || 0) * 100).toFixed(3) %>" required />
               </div>
-              <button type="submit">Update Rate</button>
+              <div style="flex:1;min-width:120px">
+                <label style="font-size:12px">Pay interest every (days)</label>
+                <input type="number" name="interest_interval_days" step="1" min="1"
+                       value="<%= Number(user.interest_interval_days || 1) %>" required />
+              </div>
+              <button type="submit">Update Interest</button>
             </form>
           </div>
         <% }) %>
