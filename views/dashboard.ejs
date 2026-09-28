@@ -24,7 +24,7 @@
         <div>
           <div class="muted">Welcome Back</div>
           <div class="balance-amount" id="live-balance">$<%= displayBalance %></div>
-              <div class="muted" style="font-size:13px;margin-top:6px">Hello, <%= user.full_name %></div>
+          <div class="muted" style="font-size:13px;margin-top:6px">Hello, <%= user.full_name %></div>
           <div class="muted" style="font-size:13px;margin-top:6px">Acct: <%= user.account_number %></div>
           <div class="muted" style="font-size:13px;margin-top:6px">Daily rate: <%= (dailyRate*100).toFixed(3) %>% • APY: <%= apy %>%</div>
         </div>
@@ -45,13 +45,34 @@
     </div>
 
     <div class="card" id="live-info">
-      <div class="section-title"><strong>Live Balance Update</strong></div>
-      <div class="muted" style="margin-bottom:8px">Your wallet updates continuously as interest accrues.</div>
+      <div class="section-title"><strong>Live Interest Tracker</strong></div>
+      <div class="muted" style="margin-bottom:12px">Your balance grows continuously while interest accrues.</div>
+
       <div class="stat-row">
-        <div><strong>Daily rate</strong><div id="daily-rate"><%= (dailyRate*100).toFixed(3) %>%</div></div>
-        <div><strong>APY</strong><div id="apy-rate"><%= apy %>%</div></div>
+        <div>
+          <strong>Interest accrued</strong>
+          <div id="interest-accrued">$0.00</div>
+        </div>
+        <div>
+          <strong>Next update</strong>
+          <div id="next-interest">24:00:00</div>
+        </div>
       </div>
-      <div class="muted" style="margin-top:10px;font-size:13px">Last interest applied: <%= new Date(user.last_interest_at || user.created_at).toLocaleDateString() %></div>
+
+      <div class="stat-row" style="margin-top:12px">
+        <div>
+          <strong>Daily rate</strong>
+          <div id="daily-rate"><%= (dailyRate*100).toFixed(3) %>%</div>
+        </div>
+        <div>
+          <strong>APY</strong>
+          <div id="apy-rate"><%= apy %>%</div>
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:10px;font-size:13px">
+        Last interest applied: <%= new Date(user.last_interest_at || user.created_at).toLocaleString() %>
+      </div>
     </div>
 
     <div class="card" id="history">
@@ -77,11 +98,13 @@
       <a class="nav-item" href="/account">Account</a>
     </div>
   </div>
+
   <div id="dashboard-data"
        data-initial-balance="<%= Number(user.balance) %>"
        data-last-interest-at="<%= user.last_interest_at || user.created_at %>"
        data-daily-rate="<%= Number(dailyRate) %>"
        style="display:none"></div>
+
   <script>
     (function(){
       const dataEl = document.getElementById('dashboard-data');
@@ -90,21 +113,47 @@
       const dailyRate = Number(dataEl?.getAttribute('data-daily-rate') || 0);
 
       const liveEl = document.getElementById('live-balance');
+      const interestEl = document.getElementById('interest-accrued');
+      const nextEl = document.getElementById('next-interest');
       const dailyEl = document.getElementById('daily-rate');
       const apyEl = document.getElementById('apy-rate');
 
+      const last = new Date(lastInterestAt).getTime();
+      const cycleMs = 24 * 60 * 60 * 1000;
+
+      function money(value) {
+        return '$' + value.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 6
+        });
+      }
+
       function update() {
         const now = Date.now();
-        const last = new Date(lastInterestAt).getTime();
         const elapsedSec = Math.max(0, (now - last) / 1000);
         const multiplier = Math.pow(1 + dailyRate, elapsedSec / 86400);
         const current = initialBalance * multiplier;
-        liveEl.textContent = '$' + current.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+        const accrued = Math.max(0, current - initialBalance);
+
+        liveEl.textContent = money(current);
+        interestEl.textContent = money(accrued);
+
+        const remaining = Math.max(0, cycleMs - (now - last));
+        const totalSeconds = Math.floor(remaining / 1000);
+        const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+        const seconds = String(totalSeconds % 60).padStart(2, '0');
+        nextEl.textContent = hours + ':' + minutes + ':' + seconds;
+
+        if (remaining <= 0) {
+          nextEl.textContent = 'Updating...';
+          setTimeout(() => window.location.reload(), 1000);
+        }
       }
 
-      // initial render
-      if (dailyEl) dailyEl.textContent = (dailyRate*100).toFixed(3) + '%';
-      if (apyEl) apyEl.textContent = ((Math.pow(1+dailyRate,365)-1)*100).toFixed(2) + '%';
+      if (dailyEl) dailyEl.textContent = (dailyRate * 100).toFixed(3) + '%';
+      if (apyEl) apyEl.textContent = ((Math.pow(1 + dailyRate, 365) - 1) * 100).toFixed(2) + '%';
+
       update();
       setInterval(update, 1000);
     })();
