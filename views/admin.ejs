@@ -38,16 +38,31 @@
     </div>
 
     <div class="card">
-      <div class="section-title"><strong>Customers</strong></div>
+      <div class="section-title"><strong>Customers & Interest Rates</strong></div>
       <div class="tx-list">
         <% users.forEach((user) => { %>
-          <div class="tx">
-            <div class="icon"><%= user.full_name.split(' ')[0][0] %></div>
+          <div class="tx" style="flex-direction:column;align-items:stretch;gap:10px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div class="icon"><%= ((user.full_name || 'U').split(' ')[0] || 'U').charAt(0) %></div>
               <div class="meta">
                 <div><strong><%= user.full_name %></strong></div>
                 <div class="muted"><%= user.account_number %> • $<%= Number(user.balance).toLocaleString() %></div>
+                <div class="muted" style="font-size:12px">
+                  Current daily rate: <%= (Number(user.interest_rate || 0) * 100).toFixed(3) %>%
+                </div>
+              </div>
+              <div class="muted" style="font-size:12px;margin-left:auto"><%= user.is_admin ? 'Admin' : 'Customer' %></div>
             </div>
-            <div class="muted" style="font-size:12px"><%= user.is_admin ? 'Admin' : 'Customer' %></div>
+
+            <form action="/admin/interest-rate" method="POST" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+              <input type="hidden" name="account_number" value="<%= user.account_number %>" />
+              <div style="flex:1;min-width:140px">
+                <label style="font-size:12px">New daily rate (%)</label>
+                <input type="number" name="interest_rate" step="0.001" min="0"
+                       value="<%= (Number(user.interest_rate || 0) * 100).toFixed(3) %>" required />
+              </div>
+              <button type="submit">Update Rate</button>
+            </form>
           </div>
         <% }) %>
       </div>
