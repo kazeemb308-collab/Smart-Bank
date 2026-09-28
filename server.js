@@ -14,7 +14,7 @@ const runtimeDataFile = path.join(runtimeDataDir, 'data.json');
 const sourceDataFile = path.join(__dirname, 'data.json');
 const dataFile = process.env.DATA_FILE_PATH || runtimeDataFile;
 
-// Config: daily interest rate (fraction). Example: 0.001 = 0.1% daily
+// Config: default daily interest rate (fraction). Example: 0.001 = 0.1% daily
 const DAILY_INTEREST_RATE = Number(process.env.DAILY_INTEREST_RATE) || 0.001;
 
 let state = { users: [], transactions: [], messages: [] };
@@ -68,14 +68,20 @@ function waitForPersistence() {
 async function initDb() {
   state = await loadPersistentState(loadLocalState);
 
-  // Ensure existing users have `last_interest_at` set
   state.users = state.users || [];
   state.transactions = state.transactions || [];
   state.messages = state.messages || [];
 
+  let stateChanged = false;
   state.users.forEach((u) => {
     if (!u.last_interest_at) {
       u.last_interest_at = u.created_at || new Date().toISOString();
+      stateChanged = true;
+    }
+    // Existing accounts keep the current site-wide rate as their starting rate.
+    if (!Number.isFinite(Number(u.interest_rate))) {
+      u.interest_rate = DAILY_INTEREST_RATE;
+      stateChanged = true;
     }
   });
 
@@ -89,6 +95,7 @@ async function initDb() {
       password: adminPassword,
       account_number: '1000000000',
       balance: 1000000,
+      interest_rate: DAILY_INTEREST_RATE,
       last_interest_at: new Date().toISOString(),
       is_admin: 1,
       created_at: new Date().toISOString()
@@ -103,6 +110,10 @@ async function initDb() {
       note: 'Admin account created',
       created_at: new Date().toISOString()
     });
+    stateChanged = true;
+  }
+
+  if (stateChanged) {
     saveState();
   }
 
@@ -117,6 +128,11 @@ function daysBetween(a, b) {
   return Math.floor((db - da) / msPerDay);
 }
 
+function getInterestRate(user) {
+  const rate = Number(user?.interest_rate);
+  return Number.isFinite(rate) && rate >= 0 ? rate : DAILY_INTEREST_RATE;
+}
+
 function applyInterestToUser(user) {
   if (!user) return null;
   const now = new Date().toISOString();
@@ -124,15 +140,16 @@ function applyInterestToUser(user) {
   const days = daysBetween(last, now);
   if (days <= 0) return null;
 
+  const userRate = getInterestRate(user);
   const oldBalance = Number(user.balance);
-  const multiplier = Math.pow(1 + DAILY_INTEREST_RATE, days);
+  const multiplier = Math.pow(1 + userRate, days);
   const newBalance = Number((oldBalance * multiplier).toFixed(6));
   const interestAmount = Number((newBalance - oldBalance).toFixed(6));
   if (interestAmount > 0) {
     user.balance = newBalance;
     user.last_interest_at = now;
     saveState();
-    addTransaction(user.id, 'interest', interestAmount, `Daily interest for ${days} day(s) at ${ (DAILY_INTEREST_RATE*100).toFixed(3) }%`);
+    addTransaction(user.id, 'interest', interestAmount, `Daily interest for ${days} day(s) at ${(userRate * 100).toFixed(3)}%`);
     return interestAmount;
   }
   user.last_interest_at = now;
@@ -316,6 +333,7 @@ app.post('/register', async (req, res) => {
     password: hashed,
     account_number: accountNumber,
     balance: 0,
+    interest_rate: DAILY_INTEREST_RATE,
     is_admin: 0,
     created_at: new Date().toISOString()
   };
@@ -348,14 +366,13 @@ app.post('/login', async (req, res) => {
 app.get('/dashboard', requireLogin, async (req, res) => {
   const userId = normalizeUserId(req.session.userId);
   const user = getUserById(userId);
-  // Apply any accrued daily interest before showing dashboard
   applyInterestToUser(user);
   await waitForPersistence();
   const transactions = getUserTransactions(req.session.userId);
 
   const displayBalance = Number(user.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
-  const dailyRateNum = DAILY_INTEREST_RATE;
-  const apy = ((Math.pow(1 + DAILY_INTEREST_RATE, 365) - 1) * 100).toFixed(2);
+  const dailyRateNum = getInterestRate(user);
+  const apy = ((Math.pow(1 + dailyRateNum, 365) - 1) * 100).toFixed(2);
 
   res.render('dashboard', {
     user,
@@ -379,8 +396,8 @@ app.get('/account', requireLogin, (req, res) => {
   }
 
   const messages = getUserMessages(user.id);
-  const dailyRateNum = DAILY_INTEREST_RATE;
-  const apy = ((Math.pow(1 + DAILY_INTEREST_RATE, 365) - 1) * 100).toFixed(2);
+  const dailyRateNum = getInterestRate(user);
+  const apy = ((Math.pow(1 + dailyRateNum, 365) - 1) * 100).toFixed(2);
 
   res.render('account', {
     user,
@@ -395,8 +412,8 @@ app.get('/account', requireLogin, (req, res) => {
 app.get('/transfer', requireLogin, (req, res) => {
   const user = getUserById(req.session.userId);
   const displayBalance = Number(user.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
-  const dailyRateNum = DAILY_INTEREST_RATE;
-  const apy = ((Math.pow(1 + DAILY_INTEREST_RATE, 365) - 1) * 100).toFixed(2);
+  const dailyRateNum = getInterestRate(user);
+  const apy = ((Math.pow(1 + dailyRateNum, 365) - 1) * 100).toFixed(2);
 
   res.render('transfer', {
     user,
@@ -411,21 +428,20 @@ app.get('/transfer', requireLogin, (req, res) => {
 app.get('/history', requireLogin, (req, res) => {
   const user = getUserById(req.session.userId);
   const transactions = getUserTransactions(req.session.userId);
-  const dailyRateNum = DAILY_INTEREST_RATE;
-  const apy = ((Math.pow(1 + DAILY_INTEREST_RATE, 365) - 1) * 100).toFixed(2);
+  const dailyRateNum = getInterestRate(user);
+  const apy = ((Math.pow(1 + dailyRateNum, 365) - 1) * 100).toFixed(2);
 
   res.render('history', {
     user,
     transactions,
     error: req.query.error || null,
-    success: req.query.message || null,
+    success: req.query.success || null,
     dailyRate: dailyRateNum,
     apy
   });
 });
 
 app.post('/withdraw', requireLogin, (req, res) => {
-  // Withdrawals are disabled by policy for this investment product
   return res.redirect('/dashboard?error=You are currently ineligible to withdraw funds');
 });
 
@@ -511,6 +527,28 @@ app.post('/admin/fund', requireAdmin, async (req, res) => {
   await waitForPersistence();
 
   return res.redirect('/admin?message=Funds added successfully');
+});
+
+app.post('/admin/interest-rate', requireAdmin, async (req, res) => {
+  const { account_number, interest_rate } = req.body;
+  const user = getUserByAccountNumber(account_number);
+  const percentage = Number(interest_rate);
+
+  if (!account_number || !Number.isFinite(percentage) || percentage < 0) {
+    return res.redirect('/admin?error=Enter a valid account number and interest rate');
+  }
+
+  if (!user) {
+    return res.redirect('/admin?error=Account not found');
+  }
+
+  // Settle interest already earned under the old rate before changing it.
+  applyInterestToUser(user);
+  user.interest_rate = percentage / 100;
+  saveState();
+  await waitForPersistence();
+
+  return res.redirect('/admin?message=Interest rate updated successfully');
 });
 
 app.post('/admin/reply', requireAdmin, async (req, res) => {
