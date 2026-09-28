@@ -104,6 +104,7 @@ async function initDb() {
       balance: 1000000,
       interest_rate: DAILY_INTEREST_RATE,
       last_interest_at: new Date().toISOString(),
+      next_interest_at: new Date(Date.now() + INTEREST_INTERVAL_MS).toISOString(),
       is_admin: 1,
       created_at: new Date().toISOString()
     };
@@ -263,14 +264,15 @@ function getUserMessages(userId) {
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
-function addTransaction(userId, type, amount, note) {
+function addTransaction(userId, type, amount, note, metadata = {}) {
   const transaction = {
     id: state.transactions.length ? state.transactions[state.transactions.length - 1].id + 1 : 1,
     user_id: userId,
     type,
     amount,
     note,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    ...metadata
   };
   state.transactions.push(transaction);
   saveState();
@@ -420,6 +422,8 @@ app.post('/register', async (req, res) => {
     balance: 0,
     interest_rate: DAILY_INTEREST_RATE,
     is_admin: 0,
+    last_interest_at: new Date().toISOString(),
+    next_interest_at: new Date(Date.now() + INTEREST_INTERVAL_MS).toISOString(),
     created_at: new Date().toISOString()
   };
 
