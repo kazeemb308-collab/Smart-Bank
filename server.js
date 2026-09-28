@@ -3,6 +3,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
+const { firebaseEnabled, loadPersistentState, savePersistentState } = require('./firestore');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -17,8 +18,9 @@ const dataFile = process.env.DATA_FILE_PATH || runtimeDataFile;
 const DAILY_INTEREST_RATE = Number(process.env.DAILY_INTEREST_RATE) || 0.001;
 
 let state = { users: [], transactions: [], messages: [] };
+let pendingPersistence = Promise.resolve();
 
-function loadState() {
+function loadLocalState() {
   if (isVercel) {
     fs.mkdirSync(path.dirname(dataFile), { recursive: true });
     if (!fs.existsSync(dataFile) && fs.existsSync(sourceDataFile)) {
@@ -31,18 +33,15 @@ function loadState() {
   }
 
   if (!fs.existsSync(dataFile)) {
-    state = { users: [], transactions: [], messages: [] };
-    saveState();
-    return state;
+    return { users: [], transactions: [], messages: [] };
   }
 
   try {
-    state = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+    return JSON.parse(fs.readFileSync(dataFile, 'utf8'));
   } catch (err) {
     console.error('Failed to read data file:', err.message);
-    state = { users: [], transactions: [] };
+    return { users: [], transactions: [], messages: [] };
   }
-  return state;
 }
 
 function saveState() {
@@ -52,21 +51,38 @@ function saveState() {
   } catch (err) {
     console.error('Failed to save state file:', err.message);
   }
+
+  if (firebaseEnabled) {
+    pendingPersistence = pendingPersistence
+      .catch(() => {})
+      .then(() => savePersistentState(state));
+  }
+
+  return pendingPersistence;
 }
 
-function initDb() {
-  loadState();
-  // Ensure existing users have `last_interest_at` set
-  state.users.forEach((u) => {
-    if (!u.last_interest_at) u.last_interest_at = u.created_at || new Date().toISOString();
-  });
+function waitForPersistence() {
+  return pendingPersistence;
+}
 
+async function initDb() {
+  state = await loadPersistentState(loadLocalState);
+
+  // Ensure existing users have `last_interest_at` set
+  state.users = state.users || [];
+  state.transactions = state.transactions || [];
   state.messages = state.messages || [];
+
+  state.users.forEach((u) => {
+    if (!u.last_interest_at) {
+      u.last_interest_at = u.created_at || new Date().toISOString();
+    }
+  });
 
   if (!state.users.some((user) => user.email === 'admin@smartbank.com')) {
     const adminPassword = bcrypt.hashSync('Admin@1234', 10);
     const adminUser = {
-      id: 1,
+      id: state.users.length ? Math.max(...state.users.map((u) => Number(u.id) || 0)) + 1 : 1,
       full_name: 'Smart Bank Admin',
       email: 'admin@smartbank.com',
       phone: '08000000000',
@@ -80,7 +96,7 @@ function initDb() {
 
     state.users.push(adminUser);
     state.transactions.push({
-      id: 1,
+      id: state.transactions.length ? Math.max(...state.transactions.map((tx) => Number(tx.id) || 0)) + 1 : 1,
       user_id: adminUser.id,
       type: 'welcome',
       amount: 1000000,
@@ -89,6 +105,9 @@ function initDb() {
     });
     saveState();
   }
+
+  await waitForPersistence();
+  console.log(firebaseEnabled ? 'Smart Bank persistence: Firestore' : 'Smart Bank persistence: local file');
 }
 
 function daysBetween(a, b) {
@@ -210,7 +229,17 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 8 }
 }));
 
-initDb();
+const dbReady = initDb();
+
+app.use(async (req, res, next) => {
+  try {
+    await dbReady;
+    next();
+  } catch (error) {
+    console.error('Database initialization failed:', error.message);
+    res.status(503).send('Smart Bank is temporarily unavailable.');
+  }
+});
 
 function requireLogin(req, res, next) {
   const userId = normalizeUserId(req.session.userId);
@@ -259,7 +288,7 @@ app.get('/register', (req, res) => {
   res.render('register', { error: null, success: null });
 });
 
-app.post('/register', (req, res) => {
+app.post('/register', async (req, res) => {
   const { full_name, email, phone, password, confirm_password } = req.body;
 
   if (!full_name || !email || !phone || !password || !confirm_password) {
@@ -293,6 +322,7 @@ app.post('/register', (req, res) => {
   saveState();
   addTransaction(newUser.id, 'welcome', 0, 'Account created successfully');
 
+  await waitForPersistence();
   req.session.userId = newUser.id;
   return res.redirect('/dashboard?message=Account created successfully');
 });
@@ -301,7 +331,7 @@ app.get('/login', (req, res) => {
   res.render('login', { error: null, success: req.query.message || null });
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   const user = getUserByEmail(email);
 
@@ -313,11 +343,12 @@ app.post('/login', (req, res) => {
   return res.redirect('/dashboard');
 });
 
-app.get('/dashboard', requireLogin, (req, res) => {
+app.get('/dashboard', requireLogin, async (req, res) => {
   const userId = normalizeUserId(req.session.userId);
   const user = getUserById(userId);
   // Apply any accrued daily interest before showing dashboard
   applyInterestToUser(user);
+  await waitForPersistence();
   const transactions = getUserTransactions(req.session.userId);
 
   const displayBalance = Number(user.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
@@ -396,7 +427,7 @@ app.post('/withdraw', requireLogin, (req, res) => {
   return res.redirect('/dashboard?error=You are currently ineligible to withdraw funds');
 });
 
-app.post('/transfer', requireLogin, (req, res) => {
+app.post('/transfer', requireLogin, async (req, res) => {
   const { recipientAccount, amount } = req.body;
   const sender = getUserById(req.session.userId);
   const numericAmount = Number(amount);
@@ -419,6 +450,7 @@ app.post('/transfer', requireLogin, (req, res) => {
   saveState();
   addTransaction(sender.id, 'transfer_out', numericAmount, `Transferred to ${recipient.account_number}`);
   addTransaction(recipient.id, 'transfer_in', numericAmount, `Received from ${sender.account_number}`);
+  await waitForPersistence();
 
   return res.redirect('/dashboard?message=Transfer completed successfully');
 });
@@ -459,7 +491,7 @@ app.get('/admin', requireAdmin, (req, res) => {
   });
 });
 
-app.post('/admin/fund', requireAdmin, (req, res) => {
+app.post('/admin/fund', requireAdmin, async (req, res) => {
   const { account_number, amount, note } = req.body;
   const numericAmount = Number(amount);
 
@@ -474,11 +506,12 @@ app.post('/admin/fund', requireAdmin, (req, res) => {
 
   updateUserBalance(user.id, numericAmount);
   addTransaction(user.id, 'admin_credit', numericAmount, note || 'Funds added by administrator');
+  await waitForPersistence();
 
   return res.redirect('/admin?message=Funds added successfully');
 });
 
-app.post('/admin/reply', requireAdmin, (req, res) => {
+app.post('/admin/reply', requireAdmin, async (req, res) => {
   const { account_number, message } = req.body;
   const numericUser = getUserByAccountNumber(account_number);
 
@@ -491,10 +524,11 @@ app.post('/admin/reply', requireAdmin, (req, res) => {
   }
 
   addMessage(numericUser.id, 'admin', message.trim());
+  await waitForPersistence();
   return res.redirect('/admin?message=Reply sent successfully');
 });
 
-app.post('/account/update', requireLogin, (req, res) => {
+app.post('/account/update', requireLogin, async (req, res) => {
   const { email, phone } = req.body;
   const user = getUserById(req.session.userId);
 
@@ -520,11 +554,12 @@ app.post('/account/update', requireLogin, (req, res) => {
   user.email = email;
   user.phone = phone;
   saveState();
+  await waitForPersistence();
 
   return res.redirect('/account?success=Account details updated');
 });
 
-app.post('/account/message', requireLogin, (req, res) => {
+app.post('/account/message', requireLogin, async (req, res) => {
   const { message } = req.body;
   const user = getUserById(req.session.userId);
 
@@ -537,6 +572,7 @@ app.post('/account/message', requireLogin, (req, res) => {
     return res.redirect('/account?error=Unable to send message right now');
   }
 
+  await waitForPersistence();
   return res.redirect('/account?success=Message sent to customer care');
 });
 
